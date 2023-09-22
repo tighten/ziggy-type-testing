@@ -2,6 +2,9 @@
 
 This repo contains files that can be used to test and experiment with Ziggy's TypeScript type definitions.
 
+> **Note**
+> If possible these files and tests should be included in the main Ziggy repo.
+
 **Usage**
 
 Open this project in VS Code or any other IDE/editor with integrated TypeScript intellisense/linting.
