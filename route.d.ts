@@ -32,37 +32,39 @@ type RawParameterValue = string | number;
 /**
  * An object parameter value containing the 'default' binding key `id`, e.g. representing an Eloquent model.
  */
-type ModelParameterValue = { id: number } & Record<keyof any, any>;
+type DefaultRoutable = { id: RawParameterValue } & Record<keyof any, unknown>;
 
 /**
  * A route parameter value.
  */
-type ParameterValue = RawParameterValue | ModelParameterValue;
+type ParameterValue = RawParameterValue | DefaultRoutable;
 
 /**
  * A parseable route parameter, either plain or nested inside an object under its binding key.
  */
-type ValueOrBoundValue<I extends ParameterInfo> = I extends { binding: string }
+type Routable<I extends ParameterInfo> = I extends { binding: string }
     ? { [K in I['binding']]: RawParameterValue } | RawParameterValue
     : ParameterValue;
 
 // Uncomment to test:
-// type A = ValueOrBoundValue<{ name: 'foo', binding: 'bar' }>;
+// type A = Routable<{ name: 'foo', binding: 'bar' }>;
 // = ParameterValue | { bar: RawParameterValue }
+// type B = Routable<{ name: 'foo' }>;
+// = RawParameterValue | DefaultRoutable
 
 /**
  * An object containing a special '_query' key to target the query string of a URL.
  */
-type HasQueryParam = { _query?: Record<string, any> };
+type HasQueryParam = { _query?: Record<string, unknown> };
 /**
  * An object of parameters for an unspecified route.
  */
-type GenericRouteParamsObject = Record<keyof any, any> & HasQueryParam;
+type GenericRouteParamsObject = Record<keyof any, unknown> & HasQueryParam;
 // `keyof any` essentially makes it function as a plain `Record`
 /**
  * An object of parameters for a specific named route.
  */
-type KnownRouteParamsObject<I extends readonly ParameterInfo[]> = { [T in I[number] as T['name']]?: ValueOrBoundValue<T> } & GenericRouteParamsObject;
+type KnownRouteParamsObject<I extends readonly ParameterInfo[]> = { [T in I[number] as T['name']]?: Routable<T> } & GenericRouteParamsObject;
 // `readonly` allows TypeScript to determine the actual values of all the
 // parameter names inside the array, instead of just seeing `string`.
 // See https://github.com/tighten/ziggy/pull/664#discussion_r1329978447.
@@ -75,11 +77,11 @@ type RouteParamsObject<N extends RouteName> = N extends KnownRouteName ? KnownRo
 /**
  * An array of parameters for an unspecified route.
  */
-type GenericRouteParamsArray = ValueOrBoundValue<ParameterInfo>[];
+type GenericRouteParamsArray = Routable<ParameterInfo>[];
 /**
  * An array of parameters for a specific named route.
  */
-type KnownRouteParamsArray<I extends readonly ParameterInfo[]> = { [K in keyof I]: ValueOrBoundValue<I[K]> };
+type KnownRouteParamsArray<I extends readonly ParameterInfo[]> = [...{ [K in keyof I]: Routable<I[K]> }, ...Array<unknown>];
 // Because `K in keyof I` for a `readonly` array is always a number, even though
 // this looks like `{ 0: T, 1: U, 2: V }` TypeScript generates `[T, U, V]`.
 // See https://github.com/tighten/ziggy/pull/664#discussion_r1330002370.
@@ -94,8 +96,8 @@ type KnownRouteParamsArray<I extends readonly ParameterInfo[]> = { [K in keyof I
  * first n items in the array of parameters, where n is the number of required parameters, but
  * allows *additional* array elements, because you can actually pass Ziggy an array containing
  * whatever extra stuff you want. This type is closer but not completely correct:
- * `{ [K in keyof I as number]: K extends keyof I ? ValueOrBoundValue<I[K]> : Record<keyof any, any> }`.
- * It allows additional array elements but insists that they all be `ValueOrBoundValue`,
+ * `{ [K in keyof I as number]: K extends keyof I ? Routable<I[K]> : Record<keyof any, any> }`.
+ * It allows additional array elements but insists that they all be `Routable`,
  * so `as number` seems to be working but `Record<keyof any, any>` doesn't?
  */
 
@@ -107,32 +109,57 @@ type RouteParamsArray<N extends RouteName> = N extends KnownRouteName ? KnownRou
 /**
  * All possible parameter argument shapes for a route.
  */
-type RouteParams<N extends RouteName> = ParameterValue
-    | RouteParamsObject<N>
-    | RouteParamsArray<N>;
+type RouteParams<N extends RouteName> = ParameterValue | RouteParamsObject<N> | RouteParamsArray<N>;
 
-interface Config {}
+interface Route {
+    uri: string,
+    methods: ('GET' | 'HEAD' | 'POST' | 'PATCH' | 'PUT' | 'OPTIONS' | 'DELETE')[],
+    domain?: string,
+    bindings?: Record<string, string>,
+    parameterNames?: string[],
+    wheres?: Record<string, unknown>,
+    middleware?: string[],
+}
 
-type Router = {
-    current(): RouteName | undefined;
-    current<T extends RouteName>(name: T, params?: RouteParams<T>): boolean;
-    get params(): Record<string, any>;
-    has<T extends RouteName>(name: T): boolean;
-};
+interface Config {
+    url: string,
+    port: number | null,
+    defaults: Record<string, RawParameterValue>,
+    routes: Record<string, Route>,
+    location?: {
+        host?: string,
+        pathname?: string,
+        search?: string,
+    },
+}
 
-// type X = RouteParams<'postComments.show'>;
+interface Router {
+    current(): RouteName | undefined,
+    current<T extends RouteName>(name: T, params?: RouteParams<T>): boolean,
+    get params(): Record<string, unknown>,
+    has<T extends RouteName>(name: T): boolean,
+     /** @deprecated since v1.0, use `has()` instead */
+    check<T extends RouteName>(name: T): boolean,
+}
+
+type X = RouteParams<'posts.comments.show'>;
 // type Y = KnownRouteParamsArray<RouteList['postComments.show']>;
+
+// For the best autocomplete experience, the order of the function overloads below *does* matter
 
 /**
  * Ziggy's route helper.
  */
+// Called with no arguments - returns a Router instance
 export default function route(): Router;
+// Called with a route name and optional additional arguments - returns a URL string
 export default function route<T extends RouteName>(
     name: T,
     params?: RouteParams<T> | undefined,
     absolute?: boolean,
     config?: Config,
 ): string;
+// Called with configuration arguments only - returns a configured Router instance
 export default function route(
     name: undefined,
     params: undefined,
